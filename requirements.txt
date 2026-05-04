@@ -1,0 +1,43 @@
+﻿# --- Core FastAPI Web App ---
+fastapi
+uvicorn
+python-dotenv
+httpx
+requests
+
+# --- Authentication ---
+PyJWT
+bcrypt
+
+# --- MongoDB ---
+pymongo
+motor
+
+# --- Web Scraping & Parsing ---
+trafilatura
+playwright
+beautifulsoup4
+
+# --- PDF Document Processing ---
+langchain-core
+langchain_community
+pypdf
+
+# --- LangChain RAG Components ---
+langchain
+langchain-groq
+langchain-pinecone
+
+# --- Pinecone Vector DB ---
+pinecone
+
+# --- Validation & Settings ---
+pydantic
+pydantic-settings
+
+# --- Visualization ---
+matplotlib
+
+# --- Excel Export ---
+pandas
+openpyxl
