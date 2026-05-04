@@ -26,6 +26,7 @@ pypdf
 # --- LangChain RAG Components ---
 langchain
 langchain-groq
+langchain-text-splitters
 
 # --- Pinecone Vector DB ---
 pinecone

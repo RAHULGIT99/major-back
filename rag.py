@@ -5,8 +5,8 @@ from typing import List, Optional
 from fastapi import HTTPException, Header
 from pydantic import BaseModel, Field
 import httpx
-from langchain.embeddings.base import Embeddings
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_core.embeddings import Embeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_groq import ChatGroq
 from pinecone import Pinecone, ServerlessSpec
 from config import PINECONE_API_KEY, GROQ_API_KEYS, EMBEDDING_API_URL, EMBEDDING_API_BATCH_SIZE, API_KEY
