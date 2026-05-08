@@ -4,6 +4,7 @@ from trafilatura import extract as trafilatura_extract
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 from typing import List
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # -------------------------
 # SCRAPER: static + JS fallback
@@ -68,6 +69,72 @@ async def fetch_and_combine(urls: List[str]) -> str:
             parts.append(f"--- SOURCE: {url} ---\n{text}\n")
     combined = "\n\n".join(parts).strip()
     return combined
+
+async def fetch_and_combine_batches(urls: List[str], batch_size: int = 3, max_chars_per_batch: int = 50000):
+    """
+    Scrape and combine URLs in batches with semantic-aware splitting.
+    Uses RecursiveCharacterTextSplitter to respect semantic boundaries.
+
+    Args:
+        urls: List of URLs to scrape
+        batch_size: Number of URLs to process and combine per batch (default 3)
+        max_chars_per_batch: Maximum characters per semantic batch (default 50000)
+
+    Yields:
+        Tuple of (batch_index, combined_batch_text) for each semantically meaningful batch
+    """
+    semantic_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=max_chars_per_batch,
+        chunk_overlap=200,
+        separators=["\n\n", "\n", ". ", " ", ""]
+    )
+
+    batch_groups = []
+    for i in range(0, len(urls), batch_size):
+        batch_groups.append(urls[i:i + batch_size])
+
+    global_batch_idx = 0
+
+    for url_group_idx, url_batch in enumerate(batch_groups):
+        parts = []
+        print(f"\nProcessing URL batch {url_group_idx + 1}/{len(batch_groups)} ({len(url_batch)} URLs)...")
+
+        for url in url_batch:
+            try:
+                text = await asyncio.to_thread(extract_static, url)
+                if not text:
+                    text = await asyncio.to_thread(extract_js, url)
+                if not text:
+                    parts.append(f"[Could not extract content from: {url}]")
+                else:
+                    parts.append(f"--- SOURCE: {url} ---\n{text}\n")
+            except Exception as e:
+                print(f"Error processing {url}: {e}")
+                parts.append(f"[Error extracting content from: {url}]")
+
+        combined_batch = "\n\n".join(parts).strip()
+
+        if combined_batch:
+            semantic_chunks = semantic_splitter.split_text(combined_batch)
+
+            if len(semantic_chunks) == 1:
+                yield global_batch_idx, semantic_chunks[0]
+                print(f"Semantic batch {global_batch_idx} yielded ({len(semantic_chunks[0])} chars)")
+                global_batch_idx += 1
+            else:
+                print(
+                    f"URL batch {url_group_idx + 1} split into {len(semantic_chunks)} semantic batches"
+                )
+                print(
+                    f"(content had {len(combined_batch)} chars, max per batch: {max_chars_per_batch})\n"
+                )
+
+                for chunk in semantic_chunks:
+                    yield global_batch_idx, chunk
+                    print(f"Semantic batch {global_batch_idx} yielded ({len(chunk)} chars)")
+                    global_batch_idx += 1
+        else:
+            print(f"URL batch {url_group_idx + 1} returned empty content")
 #saloni code
 # import asyncio
 # import requests

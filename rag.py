@@ -10,7 +10,9 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_groq import ChatGroq
 from pinecone import Pinecone, ServerlessSpec
 from config import PINECONE_API_KEY, GROQ_API_KEYS, EMBEDDING_API_URL, EMBEDDING_API_BATCH_SIZE, API_KEY
-from scraper import fetch_and_combine
+from scraper import fetch_and_combine, fetch_and_combine_batches
+
+
 
 # Pinecone client
 pinecone_client = Pinecone(api_key=PINECONE_API_KEY)
@@ -241,32 +243,47 @@ async def analyze(request: AnalyzeRequest, authorization: Optional[str] = Header
 
     print("Received /analyze request for URLs:", request.urls)
 
-    # 1. Scrape and combine
-    combined_text = await fetch_and_combine(request.urls)
-    if not combined_text or len(combined_text.strip()) == 0:
-        raise HTTPException(status_code=500, detail="Failed to extract content from provided URLs.")
-
-    # 2. Create a dynamic index name
+    # 1. Create a dynamic index name (shared across all batches)
     index_name = f"webindex-{uuid.uuid4().hex[:8]}"
     await create_index_if_not_exists_async(index_name)
 
-    # 3. Optimize text for RAG
-    optimized_text = await optimize_text_for_rag(combined_text)
-    
-    print("--------------------------------------------------")
-    print("CLEANED TEXT BEFORE VECTOR DB:")
-    print(optimized_text)
-    print("--------------------------------------------------")
+    # 2. Process URLs in batches
+    batch_summaries = []
+    total_batches = (len(request.urls) + 2) // 3
 
-    # 4. Process, chunk, embed and upsert (using optimized text)
-    await process_text_and_upsert(index_name, optimized_text)
+    async for batch_idx, combined_text in fetch_and_combine_batches(request.urls, batch_size=3):
+        if not combined_text or len(combined_text.strip()) == 0:
+            print(f"Batch {batch_idx + 1} returned empty content, skipping...")
+            continue
 
-    # 5. Generate summary via Groq (using original or optimized? Let's use optimized for consistency)
-    summary = await generate_summary_with_groq(optimized_text)
+        print(f"\n=== Processing Batch {batch_idx + 1}/{total_batches} ===")
+
+        # 2a. Optimize text for RAG
+        optimized_text = await optimize_text_for_rag(combined_text)
+
+        print("--------------------------------------------------")
+        print(f"CLEANED TEXT BATCH {batch_idx + 1} BEFORE VECTOR DB:")
+        print(optimized_text[:500] + "..." if len(optimized_text) > 500 else optimized_text)
+        print("--------------------------------------------------")
+
+        # 2b. Process, chunk, embed and upsert (using optimized text)
+        await process_text_and_upsert(index_name, optimized_text)
+
+        # 2c. Generate summary for this batch
+        batch_summary = await generate_summary_with_groq(optimized_text)
+        batch_summaries.append(f"BATCH {batch_idx + 1} SUMMARY:\n{batch_summary}")
+
+        print(f"Batch {batch_idx + 1} complete.\n")
+
+    if not batch_summaries:
+        raise HTTPException(status_code=500, detail="Failed to extract content from provided URLs.")
+
+    # 3. Combine all batch summaries into final summary
+    final_summary = "\n\n".join(batch_summaries)
 
     print(f"Analyze complete. Index: {index_name}")
 
-    return AnalyzeResponse(success=True, index_name=index_name, summary=summary)
+    return AnalyzeResponse(success=True, index_name=index_name, summary=final_summary)
 
 # -------------------------
 # ENDPOINT: /ask
